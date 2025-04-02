@@ -7,26 +7,26 @@ import {
   Area,
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
   Legend,
   ResponsiveContainer,
+  Cell,
 } from "recharts";
 import {
   Activity,
   AlertTriangle,
-  ArrowUp,
   Calendar,
   Clock,
   Globe,
   HelpCircle,
-  Info,
   MapPin,
   Maximize2,
   Minimize2,
-  RefreshCw,
   Search,
   Thermometer,
   TrendingDown,
@@ -34,7 +34,87 @@ import {
   Users,
   WormIcon as Virus,
 } from "lucide-react";
-import DatePicker from "./DatePicker";
+
+// DatePicker Component
+const DatePicker = ({ value, min, max, onChange }) => {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        Select Date
+      </label>
+      <div className="relative">
+        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <Calendar className="h-5 w-5 text-gray-400" />
+        </div>
+        <input
+          type="date"
+          value={value}
+          min={min}
+          max={max}
+          onChange={onChange}
+          className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+        />
+      </div>
+    </div>
+  );
+};
+
+// Circular Progress Component for Vaccination
+const CircularProgress = ({
+  value,
+  color,
+  size = 120,
+  strokeWidth = 10,
+  label,
+  sublabel,
+}) => {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = radius * 2 * Math.PI;
+  const progress = value / 100;
+  const strokeDashoffset = circumference * (1 - progress);
+
+  return (
+    <div className="flex flex-col items-center justify-center">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+          className="transform -rotate-90"
+        >
+          {/* Background circle */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke="#e5e7eb"
+            strokeWidth={strokeWidth}
+          />
+          {/* Progress circle */}
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={color}
+            strokeWidth={strokeWidth}
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-2xl font-bold">{Math.round(value)}%</span>
+        </div>
+      </div>
+      {label && (
+        <div className="mt-2 text-sm font-medium text-gray-700">{label}</div>
+      )}
+      {sublabel && <div className="text-xs text-gray-500">{sublabel}</div>}
+    </div>
+  );
+};
 
 const CovidDashboard = () => {
   // --- State Variables ---
@@ -44,7 +124,6 @@ const CovidDashboard = () => {
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedMetric, setSelectedMetric] = useState("total_cases");
   const [showQueries, setShowQueries] = useState(false);
-  const [showPurpose, setShowPurpose] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState(null);
   const [compareCountry, setCompareCountry] = useState(null);
   const [countryList, setCountryList] = useState([]);
@@ -60,8 +139,9 @@ const CovidDashboard = () => {
   });
   const [showStoryInsights, setShowStoryInsights] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
-  const [showTooltip, setShowTooltip] = useState(false)
-  const cardRef = useRef(null)
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [gdpData, setGdpData] = useState([]);
+  const cardRef = useRef(null);
 
   // --- Define metric options ---
   const metricOptions = [
@@ -95,12 +175,20 @@ const CovidDashboard = () => {
       color: "#34d399",
       icon: <Thermometer className="w-5 h-5" />,
     },
-    // {
-    //   value: "hosp_patients",
-    //   label: "Hospitalized Patients",
-    //   color: "#a78bfa",
-    //   icon: <Users className="w-5 h-5" />,
-    // },
+  ];
+
+  // Dashboard queries that this visualization answers
+  const dashboardQueries = [
+    "What is the global distribution of COVID-19 cases?",
+    "How have cases and deaths evolved over time in specific countries?",
+    "What is the vaccination progress across different regions?",
+    "How do demographic factors correlate with COVID-19 impact?",
+    "Which countries have the highest case fatality rates?",
+    "How do different regions compare in their pandemic trajectories?",
+    "What are the current global statistics for cases, deaths, and vaccinations?",
+    "How has the pandemic affected countries with different population densities?",
+    "What is the relationship between vaccination rates and new cases?",
+    "How do countries with similar demographics differ in pandemic outcomes?",
   ];
 
   const cumulativeMetrics = [
@@ -145,7 +233,6 @@ const CovidDashboard = () => {
           });
         });
 
-        console.log(data);
         setCsvData(data);
 
         // Compute the date range excluding dates with no data
@@ -199,8 +286,40 @@ const CovidDashboard = () => {
       );
       countrySpecificData.sort((a, b) => a.date - b.date);
       setCountryData(countrySpecificData);
+
+      // Generate GDP data for the economic impact visualization
+      generateGdpData(countrySpecificData);
     }
   }, [selectedCountry, csvData]);
+
+  // Generate GDP data for economic impact visualization
+  const generateGdpData = (countryData) => {
+    if (!countryData || countryData.length === 0) return;
+
+    // Filter data to quarterly points (for simplicity)
+    const quarterlyData = [];
+    let lastQuarter = -1;
+
+    countryData.forEach((d) => {
+      const quarter = Math.floor(d.date.getMonth() / 3);
+      if (quarter !== lastQuarter && d.gdp_per_capita) {
+        quarterlyData.push({
+          date: d.date,
+          gdp: d.gdp_per_capita,
+          // Add a baseline and calculate percentage change from baseline
+          baseline: countryData[0].gdp_per_capita || 0,
+          percentChange: d.gdp_per_capita
+            ? ((d.gdp_per_capita - (countryData[0].gdp_per_capita || 0)) /
+                (countryData[0].gdp_per_capita || 1)) *
+              100
+            : 0,
+        });
+        lastQuarter = quarter;
+      }
+    });
+
+    setGdpData(quarterlyData);
+  };
 
   // --- Recalculate compare country data when compareCountry or csvData changes ---
   useEffect(() => {
@@ -237,10 +356,7 @@ const CovidDashboard = () => {
       }
     });
 
-    console.log(countryGroups);
-
     const worldData = countryGroups["World"];
-    console.log(worldData);
     if (worldData) {
       setGlobalStats({
         totalCases: worldData.total_cases || 0,
@@ -344,7 +460,7 @@ const CovidDashboard = () => {
         countryGroups[country].push(row);
       }
     });
-    console.log(countryGroups);
+
     // For each country, get the latest data point before or on the selected date
     Object.entries(countryGroups).forEach(([country, rows]) => {
       if (rows.length === 0) return;
@@ -363,7 +479,7 @@ const CovidDashboard = () => {
       const val = validRow[selectedMetric];
       result[country] = val;
     });
-    console.log(result);
+
     return result;
   };
 
@@ -551,24 +667,81 @@ const CovidDashboard = () => {
     return insights;
   };
 
+  // --- Prepare vaccination data for stacked bar chart ---
+  const prepareVaccinationData = (countryData) => {
+    if (!countryData || countryData.length === 0) return [];
+
+    // Filter data to get the latest vaccination data
+    const filteredData = countryData.filter(
+      (d) => d.date <= new Date(selectedDate)
+    );
+
+    if (filteredData.length === 0) return [];
+
+    // Sort by date (latest first)
+    filteredData.sort((a, b) => b.date - a.date);
+
+    // Get the latest data point with vaccination information
+    const latestData = filteredData.find(
+      (d) =>
+        d.people_vaccinated_per_hundred !== null ||
+        d.people_fully_vaccinated_per_hundred !== null
+    );
+
+    if (!latestData) return [];
+
+    // Calculate first dose only percentage
+    const firstDoseOnly =
+      (latestData.people_vaccinated_per_hundred || 0) -
+      (latestData.people_fully_vaccinated_per_hundred || 0);
+
+    return [
+      {
+        name: "Vaccination Status",
+        "First Dose Only": firstDoseOnly > 0 ? firstDoseOnly : 0,
+        "Fully Vaccinated": latestData.people_fully_vaccinated_per_hundred || 0,
+        Unvaccinated: 100 - (latestData.people_vaccinated_per_hundred || 0),
+      },
+    ];
+  };
+
+  // --- Prepare data for Cases and Deaths Breakdown chart ---
+  const prepareCasesDeathsData = (countryData) => {
+    if (!countryData || countryData.length === 0) return [];
+
+    // Filter data to get the latest data
+    const filteredData = countryData.filter(
+      (d) => d.date <= new Date(selectedDate)
+    );
+
+    if (filteredData.length === 0) return [];
+
+    // Sort by date (latest first)
+    filteredData.sort((a, b) => b.date - a.date);
+
+    // Get the latest data point
+    const latestData = filteredData[0];
+
+    if (!latestData) return [];
+
+    return [
+      {
+        name: "Cases",
+        value: latestData.total_cases || 0,
+        fill: "#f87171", // red-400
+      },
+      {
+        name: "Deaths",
+        value: latestData.total_deaths || 0,
+        fill: "#6b7280", // gray-500
+      },
+    ];
+  };
+
   const metricData = computeMetricData();
   const insights = generateInsights();
 
-  // const hasVaccinationData = () => {
-  //   if (countryData.length === 0) return false
-  //   const filteredData = countryData.filter((d) => d.date <= new Date(selectedDate))
-  //   if (filteredData.length === 0) return false
-  //   filteredData.sort((a, b) => b.date - a.date)
-  //   const latestData = filteredData[0]
-  //   return (
-  //     latestData?.people_fully_vaccinated_per_hundred ||
-  //     latestData?.people_vaccinated_per_hundred ||
-  //     latestData?.total_boosters_per_hundred
-  //   )
-  // }
-
   // --- Draw the heatmap using D3 ---
-
   useEffect(() => {
     if (
       !geoData ||
@@ -579,7 +752,6 @@ const CovidDashboard = () => {
       return;
 
     const metricData = computeMetricData();
-    console.log(metricData);
     d3.select("#map-container").selectAll("*").remove();
 
     const container = document.getElementById("map-container");
@@ -616,7 +788,6 @@ const CovidDashboard = () => {
       .domain([minValue, maxValue])
       .interpolator(d3.interpolateReds);
 
-    console.log(values);
     const zoom = d3
       .zoom()
       .scaleExtent([1, 8])
@@ -856,11 +1027,27 @@ const CovidDashboard = () => {
     );
   };
 
+  const renderCustomizedXAxisTick = ({ x, y, payload }) => {
+    // Set colors: for example, green for Cases and red for Deaths.
+    const color =
+      payload.value === "Cases"
+        ? "#4caf50"
+        : payload.value === "Deaths"
+        ? "#f44336"
+        : "#000";
+    return (
+      <text x={x} y={y + 10} textAnchor="middle" fill={color}>
+        {payload.value}
+      </text>
+    );
+  };
+
   // --- Render the Country Analysis Tab content ---
   const renderCountryTab = () => {
-
     // Use getLatestCountryData to filter out future records for the selected country.
     const latestData = getLatestCountryData(selectedCountry);
+    const vaccinationData = prepareVaccinationData(countryData);
+    const casesDeathsData = prepareCasesDeathsData(countryData);
 
     return (
       <>
@@ -923,33 +1110,206 @@ const CovidDashboard = () => {
                     </p>
                   </div>
                   <div className="relative">
-      <div
-        ref={cardRef}
-        className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow"
-        onMouseEnter={() => setShowTooltip(true)}
-        onMouseLeave={() => setShowTooltip(false)}
-      >
-        <p className="text-sm text-gray-500 flex items-center">
-          <Thermometer className="w-4 h-4 mr-1 text-green-500" />
-          Vaccinations
-        </p>
-        <h3 className="font-semibold text-xl">{formatValue(latestData.total_vaccinations)}</h3>
-        <p className="text-xs text-gray-500 mt-1">
-          {formatValue(latestData.people_vaccinated_per_hundred)}% of population
-        </p>
-      </div>
+                    <div
+                      ref={cardRef}
+                      className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow"
+                      onMouseEnter={() => setShowTooltip(true)}
+                      onMouseLeave={() => setShowTooltip(false)}
+                    >
+                      <p className="text-sm text-gray-500 flex items-center">
+                        <Thermometer className="w-4 h-4 mr-1 text-green-500" />
+                        Vaccinations
+                      </p>
+                      <h3 className="font-semibold text-xl">
+                        {formatValue(latestData.total_vaccinations)}
+                      </h3>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {formatValue(latestData.people_vaccinated_per_hundred)}%
+                        of population
+                      </p>
+                    </div>
 
-      {showTooltip && (
-        <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 text-sm bg-black text-white rounded-md shadow-lg max-w-xs">
-          <p>
-            Total vaccinations can be more than the population of the country as one person can receive multiple
-            vaccinations too.
-          </p>
-          <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-8 border-transparent border-t-black"></div>
-        </div>
-      )}
-    </div>
+                    {showTooltip && (
+                      <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 text-sm bg-black text-white rounded-md shadow-lg max-w-xs">
+                        <p>
+                          Total vaccinations can be more than the population of
+                          the country as one person can receive multiple
+                          vaccinations too.
+                        </p>
+                        <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-8 border-transparent border-t-black"></div>
+                      </div>
+                    )}
+                  </div>
+                </div>
 
+                {/* Vaccination Progress Visualization */}
+                <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow mb-6">
+                  <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
+                    <Thermometer className="w-5 h-5 mr-2 text-green-500" />
+                    Vaccination Progress
+                  </h3>
+                  <div className="flex flex-col md:flex-row items-center justify-around">
+                    <CircularProgress
+                      value={latestData.people_vaccinated_per_hundred || 0}
+                      color="#60a5fa"
+                      label="At Least One Dose"
+                      sublabel={`${formatValue(
+                        latestData.people_vaccinated || 0
+                      )} people`}
+                    />
+                    <CircularProgress
+                      value={
+                        latestData.people_fully_vaccinated_per_hundred || 0
+                      }
+                      color="#34d399"
+                      label="Fully Vaccinated"
+                      sublabel={`${formatValue(
+                        latestData.people_fully_vaccinated || 0
+                      )} people`}
+                    />
+                    <CircularProgress
+                      value={latestData.total_boosters_per_hundred || 0}
+                      color="#a78bfa"
+                      label="Booster Doses"
+                      sublabel={`${formatValue(
+                        latestData.total_boosters || 0
+                      )} doses`}
+                    />
+                  </div>
+                </div>
+
+                {/* Stacked Bar Chart for Vaccination Percentages */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow mb-6">
+                    <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
+                      <Thermometer className="w-5 h-5 mr-2 text-green-500" />
+                      Vaccination Coverage Breakdown
+                    </h3>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={vaccinationData}
+                          margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="name" />
+                          <YAxis
+                            label={{
+                              value: "Percentage of Population",
+                              angle: -90,
+                              position: "insideLeft",
+                            }}
+                          />
+                          <RechartsTooltip
+                            formatter={(value) => [`${value.toFixed(2)}%`]}
+                          />
+                          <Legend />
+                          <Bar
+                            dataKey="Fully Vaccinated"
+                            stackId="a"
+                            fill="#34d399"
+                            barSize={50}
+                          />
+                          <Bar
+                            dataKey="First Dose Only"
+                            stackId="a"
+                            fill="#60a5fa"
+                          />
+                          <Bar
+                            dataKey="Unvaccinated"
+                            stackId="a"
+                            fill="#c0c2c4"
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow mb-6">
+                    <h3 className="text-lg font-medium text-gray-800 mb-4 flex items-center">
+                      <Activity className="w-5 h-5 mr-2 text-red-500" />
+                      Cases and Deaths Breakdown
+                    </h3>
+                    <div className="h-80">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={casesDeathsData}
+                          margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" stroke="#ccc" />
+                          <XAxis
+                            dataKey="name"
+                            tick={{ fill: "#333", fontSize: 12 }}
+                            axisLine={{ stroke: "#333" }}
+                            tickLine={false}
+                          />
+                          <YAxis
+                            tick={{ fill: "#333", fontSize: 12 }}
+                            axisLine={{ stroke: "#333" }}
+                            tickLine={false}
+                            label={{
+                              value: "Count",
+                              angle: -90,
+                              position: "insideLeft",
+                              fill: "#333",
+                              fontSize: 14,
+                              fontWeight: "bold",
+                            }}
+                            tickFormatter={(tick) => formatValue(tick)}
+                          />
+                          <RechartsTooltip
+                            contentStyle={{
+                              backgroundColor: "#f5f5f5",
+                              border: "none",
+                            }}
+                            labelStyle={{ color: "#333", fontWeight: "bold" }}
+                            formatter={(value) => [formatValue(value), ""]}
+                          />
+
+                          {/* Remove default legend (no `name` on the <Bar>) and add a custom legend */}
+                          <Legend
+                            content={() => (
+                              <div
+                                style={{ textAlign: "center", marginTop: 10 }}
+                              >
+                                <span style={{ marginRight: 20 }}>
+                                  <span
+                                    style={{
+                                      display: "inline-block",
+                                      width: 12,
+                                      height: 12,
+                                      backgroundColor: "#f87171",
+                                      marginRight: 5,
+                                    }}
+                                  />
+                                  Cases
+                                </span>
+                                <span>
+                                  <span
+                                    style={{
+                                      display: "inline-block",
+                                      width: 12,
+                                      height: 12,
+                                      backgroundColor: "#6b7280",
+                                      marginRight: 5,
+                                    }}
+                                  />
+                                  Deaths
+                                </span>
+                              </div>
+                            )}
+                          />
+
+                          {/* One <Bar> that draws both bars (Cases & Deaths) via two data points */}
+                          <Bar dataKey="value" barSize={50}>
+                            {casesDeathsData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.fill} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm hover:shadow-md transition-shadow mb-6">
@@ -1219,22 +1579,21 @@ const CovidDashboard = () => {
                       />
                       <Legend />
                       <Line
-  type="monotone"
-  dataKey={selectedCountry}
-  stroke="#f87171"
-  dot={false}
-  activeDot={false}
-  animationDuration={1000}
-/>
-<Line
-  type="monotone"
-  dataKey={compareCountry}
-  stroke="#60a5fa"
-  dot={false}
-  activeDot={false}
-  animationDuration={1000}
-/>
-
+                        type="monotone"
+                        dataKey={selectedCountry}
+                        stroke="#f87171"
+                        dot={false}
+                        activeDot={false}
+                        animationDuration={1000}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey={compareCountry}
+                        stroke="#60a5fa"
+                        dot={false}
+                        activeDot={false}
+                        animationDuration={1000}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -1262,35 +1621,33 @@ const CovidDashboard = () => {
               </p>
             </div>
             <button
-              onClick={() => setShowPurpose(!showPurpose)}
+              onClick={() => setShowQueries(!showQueries)}
               className="flex items-center text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
             >
-              {showPurpose ? (
+              {showQueries ? (
                 <>
                   <Minimize2 className="w-4 h-4 mr-1" />
-                  Hide Purpose
+                  Hide Queries
                 </>
               ) : (
                 <>
                   <Maximize2 className="w-4 h-4 mr-1" />
-                  Show Purpose
+                  Show Queries
                 </>
               )}
             </button>
           </div>
-          {showPurpose && (
+          {showQueries && (
             <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200 text-blue-800 animate-fadeIn">
-              <h2 className="text-lg font-semibold mb-2">Dashboard Purpose</h2>
-              <p className="mb-2">
-                This dashboard serves as a comprehensive tool for public health
-                officials, policymakers, and researchers to monitor and analyze
-                the global impact of COVID‑19.
-              </p>
-              <p>
-                Interactive features and detailed country-specific analysis
-                enable users to identify trends, compare regional impacts, and
-                make data‑driven decisions.
-              </p>
+              <h2 className="text-lg font-semibold mb-2 flex items-center">
+                <HelpCircle className="w-5 h-5 mr-2" />
+                Questions This Dashboard Answers
+              </h2>
+              <ul className="list-disc pl-5 space-y-1">
+                {dashboardQueries.map((query, index) => (
+                  <li key={index}>{query}</li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
@@ -1329,18 +1686,18 @@ const CovidDashboard = () => {
                       ))}
                     </select>
                   </div>
-                  <div className="mt-6">
-                  <DatePicker
-          value={formatDateForInput(selectedDate)}
-          min={formatDateForInput(dateRange.min)}
-          max={formatDateForInput(dateRange.max)}
-          onChange={(e) => {
-            const date = new Date(e.target.value)
-            if (!isNaN(date.getTime())) {
-              setSelectedDate(date.getTime())
-            }
-          }}
-        />
+                  <div className="">
+                    <DatePicker
+                      value={formatDateForInput(selectedDate)}
+                      min={formatDateForInput(dateRange.min)}
+                      max={formatDateForInput(dateRange.max)}
+                      onChange={(e) => {
+                        const date = new Date(e.target.value);
+                        if (!isNaN(date.getTime())) {
+                          setSelectedDate(date.getTime());
+                        }
+                      }}
+                    />
                   </div>
                   <div className="flex items-center bg-gray-50 p-3 rounded-md border border-gray-200">
                     <Clock className="w-5 h-5 text-blue-500 mr-2" />
@@ -1457,8 +1814,9 @@ const CovidDashboard = () => {
           </div>
           <div className="mt-4 text-xs text-gray-400 text-center">
             <p>
-              This dashboard is made by Suryaansh Rathinam - A0307215N for Assignment 2 of NUS CS5346 Information Visualisation Course
-            </p> 
+              This dashboard is made by Suryaansh Rathinam - A0307215N for
+              Assignment 2 of NUS CS5346 Information Visualisation Course
+            </p>
           </div>
         </div>
       </footer>

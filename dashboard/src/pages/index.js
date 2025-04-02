@@ -1,9 +1,6 @@
 import Image from "next/image";
 import { Geist, Geist_Mono } from "next/font/google";
-import Temp from "@/components/Temp";
-import WorldHeatMap from "@/components/WorldHeatMap";
-import CovidDashboard from "@/components/dashboard5";
-// import CovidDashboard from "@/components/Covid";
+import CovidDashboard from "@/components/dashboard";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
