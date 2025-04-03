@@ -217,7 +217,7 @@ const CovidDashboard = () => {
   
   useEffect(() => {
     setIsLoading(true);
-    d3.csv("/owid-covid-data.csv")
+    d3.csv("http://golden-khapse-13f5ae.netlify.app/owid-covid-data.csv")
       .then((data) => {
         // Convert date strings into Date objects and numeric fields to numbers.
         data.forEach((d) => {
