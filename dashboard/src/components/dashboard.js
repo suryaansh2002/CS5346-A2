@@ -214,6 +214,7 @@ const CovidDashboard = () => {
   }, []);
 
   // --- Load CSV data from public folder ---
+  
   useEffect(() => {
     setIsLoading(true);
     d3.csv("/owid-covid-data.csv")
