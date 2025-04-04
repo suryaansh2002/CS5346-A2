@@ -205,7 +205,6 @@ const CovidDashboard = () => {
     )
       .then((data) => {
         setGeoData(data);
-        setIsLoading(false);
       })
       .catch((err) => {
         console.error("Error loading GeoJSON:", err);
